@@ -1,28 +1,42 @@
 # Upstash Redis Connection Fix
 
-## Problem
-When deploying to Render with Upstash Redis, you get:
-```
-TypeError: Invalid protocol
-```
+## Problems Fixed
 
-## Root Cause
-Upstash Redis uses `rediss://` protocol (secure Redis) which requires TLS configuration in the node-redis client.
+### 1. TypeError: Invalid protocol
+**Cause:** Upstash Redis uses `rediss://` protocol (secure Redis) which requires TLS configuration.
+
+### 2. SocketClosedUnexpectedlyError: Socket closed unexpectedly
+**Cause:** Improper TLS configuration or missing reconnection strategy.
 
 ## Solution Applied
-Updated `/backend/src/connect/redis.ts` to detect and configure TLS for secure Redis connections:
+Updated `/backend/src/connect/redis.ts` with proper TLS configuration and reconnection strategy:
 
 ```typescript
 const isSecureRedis = REDIS_URL.startsWith("rediss://");
+
+const reconnectStrategy = (retries: number) => {
+    if (retries > 10) {
+        return new Error('Max reconnection attempts reached');
+    }
+    return Math.min(retries * 100, 3000); // Exponential backoff
+};
 
 export const redis = createClient({
     url: REDIS_URL,
     socket: isSecureRedis ? {
         tls: true,
-        rejectUnauthorized: false // Upstash requires this
-    } : undefined
+        rejectUnauthorized: true, // Proper certificate validation
+        reconnectStrategy
+    } : {
+        reconnectStrategy
+    }
 });
 ```
+
+**Key improvements:**
+- ✅ Proper TLS configuration with certificate validation
+- ✅ Automatic reconnection with exponential backoff
+- ✅ Handles both `redis://` (local) and `rediss://` (Upstash) URLs
 
 ## How to Deploy on Render + Upstash
 
@@ -108,9 +122,17 @@ You should see:
 
 ## Common Issues
 
+### Issue: "SocketClosedUnexpectedlyError"
+- **Cause:** Missing TLS configuration or reconnection strategy
+- **Solution:** Use the updated `redis.ts` with proper TLS settings (already fixed in this repo)
+
+### Issue: "TypeError: Invalid protocol"
+- **Cause:** Missing TLS configuration for `rediss://` URLs
+- **Solution:** Already fixed - the code now auto-detects and configures TLS
+
 ### Issue: "Connection timeout"
-- **Cause:** Upstash database is sleeping (free tier)
-- **Solution:** Wait 30 seconds for cold start, then retry
+- **Cause:** Upstash database is sleeping (free tier) or wrong URL
+- **Solution:** Wait 30 seconds for cold start, verify the URL format
 
 ### Issue: "Authentication failed"
 - **Cause:** Wrong password in connection string
@@ -119,6 +141,13 @@ You should see:
 ### Issue: "ENOTFOUND"
 - **Cause:** Wrong host/region in URL
 - **Solution:** Double-check the URL from Upstash dashboard
+
+### Issue: "Max reconnection attempts reached"
+- **Cause:** Redis server is unreachable or credentials are wrong
+- **Solution:** 
+  1. Verify REDIS_URL is correct
+  2. Test connection from Upstash dashboard
+  3. Check Render logs for specific error messages
 
 ## Alternative: Local Redis
 
