@@ -9,8 +9,15 @@ if (!REDIS_URL) {
     process.exit(1);
 }
 
+// Upstash Redis uses rediss:// protocol and requires TLS configuration
+const isSecureRedis = REDIS_URL.startsWith("rediss://");
+
 export const redis = createClient({
-    url: REDIS_URL
+    url: REDIS_URL,
+    socket: isSecureRedis ? {
+        tls: true,
+        rejectUnauthorized: false // Upstash requires this
+    } : undefined
 });
 
 export async function connectRedis() {

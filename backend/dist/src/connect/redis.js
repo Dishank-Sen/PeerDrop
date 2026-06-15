@@ -6,8 +6,14 @@ if (!REDIS_URL) {
     console.error("Example: REDIS_URL=redis://localhost:6379");
     process.exit(1);
 }
+// Upstash Redis uses rediss:// protocol and requires TLS configuration
+const isSecureRedis = REDIS_URL.startsWith("rediss://");
 export const redis = createClient({
-    url: REDIS_URL
+    url: REDIS_URL,
+    socket: isSecureRedis ? {
+        tls: true,
+        rejectUnauthorized: false // Upstash requires this
+    } : undefined
 });
 export async function connectRedis() {
     redis.on("error", (err) => {
