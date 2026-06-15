@@ -12,12 +12,23 @@ if (!REDIS_URL) {
 // Upstash Redis uses rediss:// protocol and requires TLS configuration
 const isSecureRedis = REDIS_URL.startsWith("rediss://");
 
+const reconnectStrategy = (retries: number) => {
+    if (retries > 10) {
+        console.error('Max Redis reconnection attempts reached');
+        return new Error('Max reconnection attempts reached');
+    }
+    return Math.min(retries * 100, 3000);
+};
+
 export const redis = createClient({
     url: REDIS_URL,
     socket: isSecureRedis ? {
         tls: true,
-        rejectUnauthorized: false // Upstash requires this
-    } : undefined
+        rejectUnauthorized: true,
+        reconnectStrategy
+    } : {
+        reconnectStrategy
+    }
 });
 
 export async function connectRedis() {
